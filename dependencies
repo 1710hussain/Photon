@@ -2,3 +2,6 @@ opencv-python
 numpy
 pytesseract
 transformers
+torch
+torchaudio
+torchvision
