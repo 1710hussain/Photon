@@ -27,8 +27,9 @@ resized_image = cv2.resize(binary_image, None, fx=1.5, fy=1.5, interpolation=cv2
 denoised_image = cv2.medianBlur(resized_image, 3)
 
 # 5. Apply Morphological Closing to Close Gaps
-kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))  # Define a 3x3 rectangular kernel
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))  # Define a 3x3 rectangular kernel
 closed_image = cv2.morphologyEx(denoised_image, cv2.MORPH_CLOSE, kernel)
+
 
 # Save the preprocessed image for Tesseract
 preprocessed_image_path = "./preprocessed_image.jpg"
@@ -59,6 +60,18 @@ bounding_boxes = list(bounding_boxes)
 print("Texts:", len(texts))
 print("Bounding boxes:", len(bounding_boxes))
 
+# Normalize bounding boxes to the range 0-1000
+image_width, image_height = image.shape[1], image.shape[0]  # Get image dimensions
+bounding_boxes = [
+    [
+        int((bbox[0] / image_width) * 1000),  # Normalize left
+        int((bbox[1] / image_height) * 1000),  # Normalize top
+        int((bbox[2] / image_width) * 1000),  # Normalize right
+        int((bbox[3] / image_height) * 1000)  # Normalize bottom
+    ]
+    for bbox in bounding_boxes
+]
+
 # Load the tokenizer
 tokenizer = LayoutLMv3Tokenizer.from_pretrained("microsoft/layoutlmv3-base")
 
@@ -77,9 +90,9 @@ print("Encoded inputs shapes:", {k: v.shape for k, v in encoded_inputs.items()})
 from tabulate import tabulate
 
 # Extract the first 10 items from encoded_inputs
-input_ids = encoded_inputs["input_ids"][0][90:110].tolist()  # Token IDs
-attention_mask = encoded_inputs["attention_mask"][0][90:110].tolist()  # Attention mask
-bounding_boxes = encoded_inputs["bbox"][0][90:110].tolist()  # Bounding boxes
+input_ids = encoded_inputs["input_ids"][0][:].tolist()  # Token IDs
+attention_mask = encoded_inputs["attention_mask"][0][:].tolist()  # Attention mask
+bounding_boxes = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
 
 # Decode the token IDs back to text
 decoded_tokens = [tokenizer.decode([token_id]).strip() for token_id in input_ids]
@@ -94,8 +107,6 @@ for i in range(len(input_ids)):
         "Bounding Box": bounding_boxes[i]
     })
 
-# Print the table in a readable format
-print(tabulate(table_data, headers="keys", tablefmt="grid"))
 
 # Highlight the bounding boxes for the first 10 items
 for bbox in bounding_boxes:
@@ -108,34 +119,46 @@ for bbox in bounding_boxes:
         thickness=1  # Thickness of the rectangle
     )
 
-cv2.imshow("Document Image", closed_image)  # Display the image in a new window
-# Wait for a key press to close the image window
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# Resize the image to fit the screen
+window_width = 400  # Desired width of the window
+window_height = 700  # Desired height of the window
+closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
 
-# # Load model and processor
-# processor = LayoutLMv3Processor.from_pretrained("microsoft/layoutlmv3-base")
-# model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base")
+# Specify the device (CPU or GPU)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# encoded_inputs = processor(image, return_tensors="pt")
+model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5).to(device)
 
-# print("Encoded inputs keys:", encoded_inputs.keys())
-# print("Encoded inputs shapes:", {k: v.shape for k, v in encoded_inputs.items()})
+# Move the encoded inputs to the same device as the model
+encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
 
-# with torch.no_grad():
-#     outputs = model(**encoded_inputs)
+with torch.no_grad():
+    outputs = model(**encoded_inputs)
 
-# import torch
-# probabilities = torch.softmax(torch.tensor(outputs.logits), dim=1)
-# predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()  # Convert to a list
-# print("Probabilities shape:", probabilities.shape)
+predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()
 
-# # Map class IDs to labels
-# id2label = {
-#     0: "O",  # Outside any entity
-#     1: "ENTITY"  # Example label for class ID 1
-# }
+id2label = {
+    0: "O",  # Outside any entity
+    1: "Restaurant Name",
+    2: "GST No.",
+    3: "Item Name",
+    4: "Item Rate"
+}
 
-# predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
+predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
 
+classified_data = []
+for token, bbox, label in zip(decoded_tokens, bounding_boxes, predicted_labels):
+    classified_data.append({
+        "Token": token,
+        "Bounding Box": bbox,
+        "Label": label
+    })
 
+from tabulate import tabulate
+print(tabulate(classified_data, headers="keys", tablefmt="grid"))
+
+# cv2.imshow("Document Image", closed_image)  # Display the image in a new window
+# # Wait for a key press to close the image window
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
