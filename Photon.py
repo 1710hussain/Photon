@@ -119,10 +119,10 @@ for bbox in bounding_boxes:
         thickness=1  # Thickness of the rectangle
     )
 
-# Resize the image to fit the screen
-window_width = 400  # Desired width of the window
-window_height = 700  # Desired height of the window
-closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
+# # Resize the image to fit the screen
+# window_width = 400  # Desired width of the window
+# window_height = 700  # Desired height of the window
+# closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
 
 # Specify the device (CPU or GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -158,7 +158,7 @@ for token, bbox, label in zip(decoded_tokens, bounding_boxes, predicted_labels):
 from tabulate import tabulate
 print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
-# cv2.imshow("Document Image", closed_image)  # Display the image in a new window
-# # Wait for a key press to close the image window
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+cv2.imshow("Document Image", closed_image)  # Display the image in a new window
+# Wait for a key press to close the image window
+cv2.waitKey(0)
+cv2.destroyAllWindows()
