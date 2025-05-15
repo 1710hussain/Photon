@@ -1,3 +1,7 @@
+#Label-Studio User account Details
+# Email: hussain@test.com
+# Password: hussain6421
+
 # Import necessary libraries
 import cv2
 import numpy as np
@@ -107,23 +111,6 @@ for i in range(len(input_ids)):
         "Bounding Box": bounding_boxes[i]
     })
 
-
-# Highlight the bounding boxes for the first 10 items
-for bbox in bounding_boxes:
-    # Draw a rectangle on the image
-    cv2.rectangle(
-        closed_image,
-        (bbox[0], bbox[1]),  # Top-left corner
-        (bbox[2], bbox[3]),  # Bottom-right corner
-        color=(0, 255, 0),  # Green color
-        thickness=1  # Thickness of the rectangle
-    )
-
-# # Resize the image to fit the screen
-# window_width = 400  # Desired width of the window
-# window_height = 700  # Desired height of the window
-# closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
-
 # Specify the device (CPU or GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -158,7 +145,25 @@ for token, bbox, label in zip(decoded_tokens, bounding_boxes, predicted_labels):
 from tabulate import tabulate
 print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
-cv2.imshow("Document Image", closed_image)  # Display the image in a new window
-# Wait for a key press to close the image window
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+#-----------------------------------------------------------------------------------
+# # Highlight the bounding boxes for the first 10 items
+# for bbox in bounding_boxes:
+#     # Draw a rectangle on the image
+#     cv2.rectangle(
+#         closed_image,
+#         (bbox[0], bbox[1]),  # Top-left corner
+#         (bbox[2], bbox[3]),  # Bottom-right corner
+#         color=(0, 255, 0),  # Green color
+#         thickness=1  # Thickness of the rectangle
+#     )
+
+# # Resize the image to fit the screen
+# window_width = 400  # Desired width of the window
+# window_height = 700  # Desired height of the window
+# closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
+
+# cv2.imshow("Document Image", closed_image)  # Display the image in a new window
+# # Wait for a key press to close the image window
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
+#-----------------------------------------------------------------------------------
