@@ -127,8 +127,8 @@ predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()
 id2label = {
     0: "O",  # Outside any entity
     1: "Restaurant Name",
-    2: "GST No.",
-    3: "Item Name",
+    2: "Item Name",
+    3: "Item Qty",
     4: "Item Rate"
 }
 
