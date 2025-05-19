@@ -43,6 +43,7 @@ cv2.imwrite(preprocessed_image_path, closed_image)
 # image = cv2.imread(preprocessed_image_path)  # Replace with your image path
 
 image = closed_image  # Use the preprocessed image for OCR
+image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
 # Extract text and bounding boxes using Tesseract OCR
 ocr_data = pytesseract.image_to_data(image, output_type=Output.DICT)
@@ -64,28 +65,11 @@ bounding_boxes = list(bounding_boxes)
 print("Texts:", len(texts))
 print("Bounding boxes:", len(bounding_boxes))
 
-# Normalize bounding boxes to the range 0-1000
-image_width, image_height = image.shape[1], image.shape[0]  # Get image dimensions
-bounding_boxes = [
-    [
-        int((bbox[0] / image_width) * 1000),  # Normalize left
-        int((bbox[1] / image_height) * 1000),  # Normalize top
-        int((bbox[2] / image_width) * 1000),  # Normalize right
-        int((bbox[3] / image_height) * 1000)  # Normalize bottom
-    ]
-    for bbox in bounding_boxes
-]
-
-# Load the tokenizer
-tokenizer = LayoutLMv3Tokenizer.from_pretrained("microsoft/layoutlmv3-base")
+# Load the processor and tokenizer
+processor = LayoutLMv3Processor.from_pretrained("microsoft/layoutlmv3-base")
 
 # Tokenize the OCR output
-encoded_inputs = tokenizer(
-    text=texts,
-    boxes=bounding_boxes,
-    return_tensors="pt",
-    truncation=True
-)
+encoded_inputs = processor(image, return_tensors="pt", truncation=True)
 
 print("Encoded inputs keys:", encoded_inputs.keys())
 print("Encoded inputs shapes:", {k: v.shape for k, v in encoded_inputs.items()})
@@ -96,10 +80,10 @@ from tabulate import tabulate
 # Extract the first 10 items from encoded_inputs
 input_ids = encoded_inputs["input_ids"][0][:].tolist()  # Token IDs
 attention_mask = encoded_inputs["attention_mask"][0][:].tolist()  # Attention mask
-bounding_boxes = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
+bounding_boxes_normalized = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
 
 # Decode the token IDs back to text
-decoded_tokens = [tokenizer.decode([token_id]).strip() for token_id in input_ids]
+decoded_tokens = [processor.decode([token_id]).strip() for token_id in input_ids]
 
 # Create a table with the data
 table_data = []
@@ -108,13 +92,18 @@ for i in range(len(input_ids)):
         "Token ID": input_ids[i],
         "Text": decoded_tokens[i],
         "Attention Mask": attention_mask[i],
-        "Bounding Box": bounding_boxes[i]
+        "Bounding Box": bounding_boxes_normalized[i]
     })
+
+print(encoded_inputs.keys())
+print(tabulate(table_data, headers="keys", tablefmt="grid"))
 
 # Specify the device (CPU or GPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5).to(device)
+#Load the model
+model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5)
+model = model.to(device)
 
 # Move the encoded inputs to the same device as the model
 encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
@@ -135,7 +124,7 @@ id2label = {
 predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
 
 classified_data = []
-for token, bbox, label in zip(decoded_tokens, bounding_boxes, predicted_labels):
+for token, bbox, label in zip(decoded_tokens, bounding_boxes_normalized, predicted_labels):
     classified_data.append({
         "Token": token,
         "Bounding Box": bbox,
@@ -145,25 +134,25 @@ for token, bbox, label in zip(decoded_tokens, bounding_boxes, predicted_labels):
 from tabulate import tabulate
 print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
-#-----------------------------------------------------------------------------------
-# # Highlight the bounding boxes for the first 10 items
-# for bbox in bounding_boxes:
-#     # Draw a rectangle on the image
-#     cv2.rectangle(
-#         closed_image,
-#         (bbox[0], bbox[1]),  # Top-left corner
-#         (bbox[2], bbox[3]),  # Bottom-right corner
-#         color=(0, 255, 0),  # Green color
-#         thickness=1  # Thickness of the rectangle
-#     )
+# #-----------------------------------------------------------------------------------
+# Highlight the bounding boxes for the first 10 items
+for bbox in bounding_boxes:
+    # Draw a rectangle on the image
+    cv2.rectangle(
+        closed_image,
+        (bbox[0], bbox[1]),  # Top-left corner
+        (bbox[2], bbox[3]),  # Bottom-right corner
+        color=(0, 255, 0),  # Green color
+        thickness=1  # Thickness of the rectangle
+    )
 
-# # Resize the image to fit the screen
-# window_width = 400  # Desired width of the window
-# window_height = 700  # Desired height of the window
-# closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
+# Resize the image to fit the screen
+window_width = 400  # Desired width of the window
+window_height = 700  # Desired height of the window
+closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
 
-# cv2.imshow("Document Image", closed_image)  # Display the image in a new window
-# # Wait for a key press to close the image window
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-#-----------------------------------------------------------------------------------
+cv2.imshow("Document Image", closed_image)  # Display the image in a new window
+# Wait for a key press to close the image window
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+# #-----------------------------------------------------------------------------------
