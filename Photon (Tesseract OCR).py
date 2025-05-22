@@ -9,38 +9,37 @@ import pytesseract
 from pytesseract import Output
 from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification, LayoutLMv3Tokenizer, logging
 import torch  # Ensure PyTorch is imported
+from tabulate import tabulate # Import tabulate for better table formatting (optional)
+
+# Load the tokenizer
+tokenizer = LayoutLMv3Tokenizer.from_pretrained("microsoft/layoutlmv3-base")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # Specify the device (CPU or GPU)
+model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5).to(device)
+
+# Define the label mapping
+id2label = {
+    0: "O",  # Outside any entity
+    1: "Restaurant Name",
+    2: "Item Name",
+    3: "Item Qty",
+    4: "Item Rate"
+}
 
 # Suppress transformers logging
 logging.set_verbosity_error()
 
-
-# Load the image using OpenCV
+# Load and pre-process the image using OpenCV
 image_raw = cv2.imread("./bill.jpg")  # Load the image
-
-# Preprocessing Steps
-# 1. Convert to Grayscale
-gray_image = cv2.cvtColor(image_raw, cv2.COLOR_BGR2GRAY)
-
-# 2. Apply Thresholding (Binarization)
-_, binary_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY)
-
-# 3. Resize the Image (Optional, if text is too small)
-resized_image = cv2.resize(binary_image, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LINEAR)
-
-# 4. Noise Removal (Optional, if the image has noise)
-denoised_image = cv2.medianBlur(resized_image, 3)
-
-# 5. Apply Morphological Closing to Close Gaps
-kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))  # Define a 3x3 rectangular kernel
-closed_image = cv2.morphologyEx(denoised_image, cv2.MORPH_CLOSE, kernel)
-
+gray_image = cv2.cvtColor(image_raw, cv2.COLOR_BGR2GRAY) # 1. Convert to Grayscale
+_, binary_image = cv2.threshold(gray_image, 150, 255, cv2.THRESH_BINARY) # 2. Apply Thresholding (Binarization)
+resized_image = cv2.resize(binary_image, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LINEAR) # 3. Resize the Image (Optional, if text is too small)
+denoised_image = cv2.medianBlur(resized_image, 3) # 4. Noise Removal (Optional, if the image has noise)
+kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))  # 5. Apply Morphological Closing to Close Gaps
+closed_image = cv2.morphologyEx(denoised_image, cv2.MORPH_CLOSE, kernel) # 5. Apply Morphological Closing to Close Gaps
 
 # Save the preprocessed image for Tesseract
 preprocessed_image_path = "./preprocessed_image.jpg"
 cv2.imwrite(preprocessed_image_path, closed_image)
-
-# # Load the image using OpenCV
-# image = cv2.imread(preprocessed_image_path)  # Replace with your image path
 
 image = closed_image  # Use the preprocessed image for OCR
 
@@ -76,8 +75,7 @@ bounding_boxes_normalized = [
     for bbox in bounding_boxes
 ]
 
-# Load the tokenizer
-tokenizer = LayoutLMv3Tokenizer.from_pretrained("microsoft/layoutlmv3-base")
+
 
 # Tokenize the OCR output
 encoded_inputs = tokenizer(
@@ -90,31 +88,26 @@ encoded_inputs = tokenizer(
 print("Encoded inputs keys:", encoded_inputs.keys())
 print("Encoded inputs shapes:", {k: v.shape for k, v in encoded_inputs.items()})
 
-# Import tabulate for better table formatting (optional)
-from tabulate import tabulate
-
 # Extract the first 10 items from encoded_inputs
-input_ids = encoded_inputs["input_ids"][0][:].tolist()  # Token IDs
-attention_mask = encoded_inputs["attention_mask"][0][:].tolist()  # Attention mask
-bounding_boxes_normalized = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
+input_ids = encoded_inputs["input_ids"][0][60:100].tolist()  # Token IDs
+attention_mask = encoded_inputs["attention_mask"][0][60:100].tolist()  # Attention mask
+bounding_boxes_normalized = encoded_inputs["bbox"][0][60:100].tolist()  # Bounding boxes
 
 # Decode the token IDs back to text
 decoded_tokens = [tokenizer.decode([token_id]).strip() for token_id in input_ids]
 
-# Create a table with the data
+# # Create a table with the data
 # table_data = []
 # for i in range(len(input_ids)):
 #     table_data.append({
 #         "Token ID": input_ids[i],
 #         "Text": decoded_tokens[i],
 #         "Attention Mask": attention_mask[i],
-#         "Bounding Box": bounding_boxes[i]
+#         "Bounding Box": bounding_boxes_normalized[i]
 #     })
 
-# Specify the device (CPU or GPU)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5).to(device)
+# print(encoded_inputs.keys())
+# print(tabulate(table_data, headers="keys", tablefmt="grid"))
 
 # Move the encoded inputs to the same device as the model
 encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
@@ -123,14 +116,6 @@ with torch.no_grad():
     outputs = model(**encoded_inputs)
 
 predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()
-
-id2label = {
-    0: "O",  # Outside any entity
-    1: "Restaurant Name",
-    2: "Item Name",
-    3: "Item Qty",
-    4: "Item Rate"
-}
 
 predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
 
@@ -142,8 +127,7 @@ for token, bbox, label in zip(decoded_tokens, bounding_boxes_normalized, predict
         "Label": label
     })
 
-# from tabulate import tabulate
-# print(tabulate(classified_data, headers="keys", tablefmt="grid"))
+print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
 #-----------------------------------------------------------------------------------
 # Highlight the bounding boxes for the first 10 items
