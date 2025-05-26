@@ -38,7 +38,7 @@ def preprocess_image(image_path):       # Load and pre-process the image using O
     closed_image = cv2.morphologyEx(denoised_image, cv2.MORPH_CLOSE, kernel) # 5. Apply Morphological Closing to Close Gaps
     return closed_image
 
-image = preprocess_image("./bill.jpg")  # Use the preprocessed image for OCR
+# image = preprocess_image("./bill.jpg")  # Use the preprocessed image for OCR
 
 def extract_ocr_data(image):        # Extract text and bounding boxes using Tesseract OCR
     ocr_data = pytesseract.image_to_data(image, output_type=Output.DICT)
@@ -56,7 +56,7 @@ def extract_ocr_data(image):        # Extract text and bounding boxes using Tess
     bounding_boxes = list(bounding_boxes)
     return texts, bounding_boxes
 
-bounding_boxes = extract_ocr_data(image)[1]
+#texts, bounding_boxes = extract_ocr_data(image)
 
 def normalize_bboxes(bounding_boxes, image_shape):# Normalize bounding boxes to the range 0-1000
     image_width, image_height = image_shape[1], image_shape[0]  # Get image dimensions
@@ -70,66 +70,75 @@ def normalize_bboxes(bounding_boxes, image_shape):# Normalize bounding boxes to 
         for bbox in bounding_boxes
     ]
 
-bounding_boxes_normalized = normalize_bboxes(bounding_boxes, image.shape)
+# bounding_boxes_normalized = normalize_bboxes(bounding_boxes, image.shape)
 
-# # Tokenize the OCR output
-# encoded_inputs = tokenizer(
-#     text=texts,
-#     boxes=bounding_boxes_normalized,
-#     return_tensors="pt",
-#     truncation=True
-# )
+def classify_tokens(texts, bounding_boxes_normalized, tokenizer, model, device):
+    # Tokenize the OCR output
+    encoded_inputs = tokenizer(
+        text=texts,
+        boxes=bounding_boxes_normalized,
+        return_tensors="pt",
+        truncation=True
+    )
+    encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()} # Move the encoded inputs to the same device as the model
+    with torch.no_grad():
+        outputs = model(**encoded_inputs)
+    predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()
+    predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
+    input_ids = encoded_inputs["input_ids"][0][:].tolist()  # Token IDs
+    bounding_boxes_normalized = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
+    decoded_tokens = [tokenizer.decode([token_id]).strip() for token_id in input_ids] # Decode the token IDs back to text
+    classified_data = []
+    for token, bbox, label in zip(decoded_tokens, bounding_boxes_normalized, predicted_labels):
+        classified_data.append({
+            "Token": token,
+            "Bounding Box": bbox,
+            "Label": label
+        })
+    return classified_data
 
-# print("Encoded inputs keys:", encoded_inputs.keys())
-# print("Encoded inputs shapes:", {k: v.shape for k, v in encoded_inputs.items()})
+def process_image(image_path, tokenizer, model, device):
+    image = preprocess_image(image_path)
+    texts, bounding_boxes = extract_ocr_data(image)
+    bounding_boxes_normalized = normalize_bboxes(bounding_boxes, image.shape)
+    classified_data = classify_tokens(texts, bounding_boxes_normalized, tokenizer, model, device)
+    return classified_data
 
-# # Extract the first 10 items from encoded_inputs
-# input_ids = encoded_inputs["input_ids"][0][:].tolist()  # Token IDs
-# attention_mask = encoded_inputs["attention_mask"][0][:].tolist()  # Attention mask
-# bounding_boxes_normalized = encoded_inputs["bbox"][0][:].tolist()  # Bounding boxes
+if __name__ == "__main__":
+    # Load model and tokenizer once
+    tokenizer = LayoutLMv3Tokenizer.from_pretrained("microsoft/layoutlmv3-base")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = LayoutLMv3ForTokenClassification.from_pretrained("microsoft/layoutlmv3-base", num_labels=5).to(device)
 
-# # Decode the token IDs back to text
-# decoded_tokens = [tokenizer.decode([token_id]).strip() for token_id in input_ids]
+    # List of images to process
+    image_paths = [
+        "./Dataset/train 1.jpg",
+        "./Dataset/train 2.jpg",
+        "./Dataset/trian 3.jpg",
+        "./Dataset/train 4.jpg",
+        "./Dataset/train 5.jpg"
+    ]
 
-
-# # Move the encoded inputs to the same device as the model
-# encoded_inputs = {key: value.to(device) for key, value in encoded_inputs.items()}
-
-# with torch.no_grad():
-#     outputs = model(**encoded_inputs)
-
-# predicted_class_ids = outputs.logits.argmax(dim=-1).squeeze().tolist()
-
-# predicted_labels = [id2label[class_id] for class_id in predicted_class_ids]
-
-# classified_data = []
-# for token, bbox, label in zip(decoded_tokens, bounding_boxes_normalized, predicted_labels):
-#     classified_data.append({
-#         "Token": token,
-#         "Bounding Box": bbox,
-#         "Label": label
-#     })
-
-# print(tabulate(classified_data, headers="keys", tablefmt="grid"))
+    for image_path in image_paths:
+        classified_data = process_image(image_path, tokenizer, model, device)
+        print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
 # #-----------------------------------------------------------------------------------
-# # Highlight the bounding boxes for the first 10 items
-# for bbox in bounding_boxes:
-#     # Draw a rectangle on the image
-#     cv2.rectangle(
-#         closed_image,
-#         (bbox[0], bbox[1]),  # Top-left corner
-#         (bbox[2], bbox[3]),  # Bottom-right corner
-#         color=(0, 255, 0),  # Green color
-#         thickness=1  # Thickness of the rectangle
-#     )
+# def visualize_bboxes(image, bounding_boxes):
+#     for bbox in bounding_boxes: # Draw bounding boxes on the image
+#         cv2.rectangle(          # Draw a rectangle on the image
+#             image,
+#             (bbox[0], bbox[1]),  # Top-left corner
+#             (bbox[2], bbox[3]),  # Bottom-right corner
+#             color=(0, 255, 0),  # Green color
+#             thickness=1  # Thickness of the rectangle
+#         )
+#     window_width = 400  # Desired width of the window
+#     window_height = 700  # Desired height of the window
+#     image = cv2.resize(image, (window_width, window_height), interpolation=cv2.INTER_AREA)
+#     return image
 
-# # Resize the image to fit the screen
-# window_width = 400  # Desired width of the window
-# window_height = 700  # Desired height of the window
-# closed_image = cv2.resize(closed_image, (window_width, window_height), interpolation=cv2.INTER_AREA)
-
-# cv2.imshow("Document Image", closed_image)  # Display the image in a new window
+# cv2.imshow("Document Image", visualize_bboxes(image,bounding_boxes))  # Display the image in a new window
 # # Wait for a key press to close the image window
 # cv2.waitKey(0)
 # cv2.destroyAllWindows()
