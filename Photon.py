@@ -121,6 +121,7 @@ if __name__ == "__main__":
 
     for image_path in image_paths:
         classified_data = process_image(image_path, tokenizer, model, device)
+        print(f"\nResults for {image_path}:")
         print(tabulate(classified_data, headers="keys", tablefmt="grid"))
 
 # #-----------------------------------------------------------------------------------
